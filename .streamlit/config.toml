@@ -1,0 +1,14 @@
+[theme]
+base = "dark"
+primaryColor = "#5b8df8"
+backgroundColor = "#0a0c10"
+secondaryBackgroundColor = "#111318"
+textColor = "#e8eaf0"
+
+[server]
+headless = true
+port = 8501
+enableCORS = false
+
+[runner]
+fastReruns = true

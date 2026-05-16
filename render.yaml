@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: argus-sentinel
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BRIGHT_DATA_API_KEY
+        sync: false
+      - key: BRIGHT_DATA_SERP_KEY
+        sync: false
+      - key: BRIGHT_DATA_CUSTOMER_ID
+        sync: false
+      - key: BRIGHT_DATA_PROXY_PASS
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true

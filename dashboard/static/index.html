@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARGUS Sentinel — Intelligence Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #1a1d24;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --text2: #8b8fa8;
+    --text3: #555970;
+    --accent: #5b8df8;
+    --accent2: #3d6ee8;
+    --green: #38d98a;
+    --amber: #f5a623;
+    --red: #e84040;
+    --coral: #f07060;
+    --teal: #2ec4b6;
+    --purple: #a78bfa;
+    --mono: 'SF Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .logo-text {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text);
+  }
+  .logo-sub {
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text3);
+    margin-left: auto;
+    transition: background 0.3s;
+  }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.running { background: var(--amber); animation: pulse 1s infinite; }
+  .status-label { font-size: 12px; color: var(--text2); }
+
+  /* Query bar */
+  .query-bar {
+    padding: 16px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+  }
+  .query-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .query-input:focus { border-color: var(--accent); }
+  .query-input::placeholder { color: var(--text3); }
+  .run-btn {
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .run-btn:hover { background: var(--accent2); }
+  .run-btn:active { transform: scale(0.97); }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Layout */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    height: calc(100vh - 130px);
+  }
+  .main-panel {
+    overflow-y: auto;
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .side-panel {
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Velocity gauge */
+  .velocity-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .vel-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .vel-score {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .vel-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
+  .vel-source { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  /* Score colors */
+  .score-low    { color: var(--text2); }
+  .score-medium { color: var(--amber); }
+  .score-high   { color: var(--coral); }
+  .score-peak   { color: var(--red); }
+
+  /* Trajectory sparkline */
+  .sparkline { width: 100%; height: 40px; }
+
+  /* Signals list */
+  .signal-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .signal-item:last-child { border-bottom: none; }
+  .signal-badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    height: fit-content;
+    margin-top: 2px;
+  }
+  .badge-news    { background: rgba(91,141,248,0.15); color: var(--accent); border: 1px solid rgba(91,141,248,0.3); }
+  .badge-finance { background: rgba(56,217,138,0.12); color: var(--green);  border: 1px solid rgba(56,217,138,0.25); }
+  .badge-site    { background: rgba(46,196,182,0.12); color: var(--teal);   border: 1px solid rgba(46,196,182,0.25); }
+  .badge-social  { background: rgba(167,139,250,0.12); color: var(--purple);border: 1px solid rgba(167,139,250,0.25); }
+  .signal-content { font-size: 13px; color: var(--text); flex: 1; }
+  .signal-content a { color: var(--accent); text-decoration: none; }
+  .signal-weight { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* Prediction card */
+  .prediction-box {
+    background: var(--surface2);
+    border: 1px solid rgba(91,141,248,0.25);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .prediction-text { font-size: 14px; color: var(--text); line-height: 1.5; }
+  .confidence-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .confidence-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+  .confidence-pct { font-size: 12px; color: var(--accent); font-weight: 600; min-width: 36px; }
+
+  /* Alert banner */
+  .alert-banner {
+    background: rgba(232,64,64,0.12);
+    border: 1px solid rgba(232,64,64,0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .alert-icon { font-size: 16px; }
+
+  /* Summary */
+  .summary-text {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .finding-list { list-style: none; }
+  .finding-list li {
+    padding: 6px 0 6px 16px;
+    position: relative;
+    font-size: 13px;
+    color: var(--text2);
+    border-bottom: 1px solid var(--border);
+  }
+  .finding-list li::before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+  .finding-list li:last-child { border-bottom: none; }
+  .action-list li { color: var(--green); }
+  .action-list li::before { color: var(--green); }
+
+  /* History feed (sidebar) */
+  .feed-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text3);
+    margin-bottom: 12px;
+  }
+  .feed-item {
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .feed-item:hover { border-color: var(--accent); }
+  .feed-query { font-size: 12px; color: var(--text); font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-meta { display: flex; gap: 8px; align-items: center; }
+  .feed-score { font-size: 11px; font-weight: 600; }
+  .feed-time { font-size: 11px; color: var(--text3); margin-left: auto; }
+  .feed-alert { font-size: 10px; color: var(--red); background: rgba(232,64,64,0.12); padding: 1px 5px; border-radius: 3px; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 60%;
+    color: var(--text3);
+    text-align: center;
+    gap: 12px;
+  }
+  .empty-icon { font-size: 48px; opacity: 0.3; }
+  .empty-title { font-size: 16px; color: var(--text2); }
+  .empty-sub { font-size: 13px; max-width: 340px; }
+
+  /* Processing state */
+  .processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 40px;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  .processing-steps { display: flex; flex-direction: column; gap: 6px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+  .step.done { color: var(--green); }
+  .step.active { color: var(--text); }
+  .step-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+  .step.done .step-dot { background: var(--green); }
+  .step.active .step-dot { background: var(--accent); animation: pulse 1s infinite; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🛰</div>
+    <div>
+      <div class="logo-text">ARGUS Sentinel</div>
+      <div class="logo-sub">Temporal Web Intelligence</div>
+    </div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+    <span class="status-label" id="status-label">Connecting…</span>
+    <div class="status-dot" id="status-dot"></div>
+  </div>
+</div>
+
+<div class="query-bar">
+  <input class="query-input" id="query-input"
+    placeholder='Try: "What is OpenAI planning to launch in the next 30 days?" or "Monitor Anthropic vs DeepMind"'
+    value="" />
+  <button class="run-btn" id="run-btn" onclick="runQuery()">Run Intelligence</button>
+</div>
+
+<div class="layout">
+  <div class="main-panel" id="main-panel">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🛰</div>
+      <div class="empty-title">ARGUS Sentinel ready</div>
+      <div class="empty-sub">Enter any intelligence query above. ARGUS will deploy 4 specialised agents
+        across live news, financial filings, competitor sites, and social platforms simultaneously.</div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+        <button onclick="setQuery(this.textContent)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;color:var(--text2);cursor:pointer;font-size:12px">OpenAI product signals</button>
+        <button onclick="setQuery(this.textContent)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;color:var(--text2);cursor:pointer;font-size:12px">Stripe M&A signals</button>
+        <button onclick="setQuery(this.textContent)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;color:var(--text2);cursor:pointer;font-size:12px">Anthropic vs DeepMind hiring</button>
+        <button onclick="setQuery(this.textContent)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;color:var(--text2);cursor:pointer;font-size:12px">Notion competitor pricing changes</button>
+      </div>
+    </div>
+    <div id="processing-state" style="display:none">
+      <div class="processing">
+        <div class="spinner"></div>
+        <div class="processing-steps">
+          <div class="step active" id="step-intent"><div class="step-dot"></div> Parsing query intent</div>
+          <div class="step" id="step-agents"><div class="step-dot"></div> Deploying 4 agents (news, finance, site, social)</div>
+          <div class="step" id="step-temporal"><div class="step-dot"></div> Running temporal velocity engine</div>
+          <div class="step" id="step-synthesis"><div class="step-dot"></div> Synthesising with Claude + MCP live web</div>
+        </div>
+      </div>
+    </div>
+    <div id="report-container" style="display:none"></div>
+  </div>
+
+  <div class="side-panel">
+    <div class="feed-title">Intelligence history</div>
+    <div id="feed-list">
+      <div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">No queries yet</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let ws;
+  let currentQuery = '';
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => {
+      document.getElementById('status-dot').className = 'status-dot connected';
+      document.getElementById('status-label').textContent = 'Connected';
+    };
+    ws.onclose = () => {
+      document.getElementById('status-dot').className = 'status-dot';
+      document.getElementById('status-label').textContent = 'Reconnecting…';
+      setTimeout(connect, 3000);
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    };
+  }
+
+  function handleMessage(msg) {
+    if (msg.type === 'history') {
+      msg.data.forEach(r => addToFeed(r));
+    } else if (msg.type === 'status') {
+      updateProcessingStep(msg.status);
+    } else if (msg.type === 'report') {
+      renderReport(msg.data);
+      addToFeed(msg.data);
+      setRunning(false);
+    } else if (msg.type === 'error') {
+      showError(msg.message);
+      setRunning(false);
+    }
+  }
+
+  function updateProcessingStep(status) {
+    const map = {
+      running: 'step-intent',
+      agents_deployed: 'step-agents',
+      temporal: 'step-temporal',
+      synthesis: 'step-synthesis',
+    };
+    const stepId = map[status];
+    if (!stepId) return;
+    // Mark previous steps done
+    const steps = ['step-intent','step-agents','step-temporal','step-synthesis'];
+    const idx = steps.indexOf(stepId);
+    steps.forEach((s, i) => {
+      const el = document.getElementById(s);
+      if (i < idx) { el.className = 'step done'; }
+      else if (i === idx) { el.className = 'step active'; }
+      else { el.className = 'step'; }
+    });
+  }
+
+  function setRunning(running) {
+    const btn = document.getElementById('run-btn');
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    btn.disabled = running;
+    btn.textContent = running ? 'Running…' : 'Run Intelligence';
+    dot.className = running ? 'status-dot running' : 'status-dot connected';
+    label.textContent = running ? 'Processing' : 'Connected';
+
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('processing-state').style.display = running ? 'block' : 'none';
+    document.getElementById('report-container').style.display = running ? 'none' : '';
+  }
+
+  function scoreClass(v) {
+    if (v >= 8) return 'score-peak';
+    if (v >= 5) return 'score-high';
+    if (v >= 3) return 'score-medium';
+    return 'score-low';
+  }
+
+  function renderReport(r) {
+    const el = document.getElementById('report-container');
+    const profile = r.profiles?.[0];
+    if (!profile) { el.innerHTML = '<div class="card"><p>No data returned.</p></div>'; return; }
+
+    const vCls = scoreClass(profile.velocity_score);
+    const confPct = Math.round((profile.prediction_confidence || 0) * 100);
+    const slopeDir = profile.trajectory_slope > 0 ? '↑ accelerating' : profile.trajectory_slope < -0.05 ? '↓ decelerating' : '→ stable';
+
+    let alertHtml = '';
+    if (r.alert_triggered) {
+      alertHtml = `<div class="alert-banner"><span class="alert-icon">⚠</span>
+        <strong>Alert triggered</strong> — velocity threshold exceeded. Immediate attention recommended.</div>`;
+    }
+
+    const sourceVels = Object.entries(profile.source_velocities || {})
+      .map(([src, v]) => `
+        <div class="vel-box">
+          <div class="vel-score ${scoreClass(v)}">${(+v).toFixed(1)}</div>
+          <div class="vel-source">${src}</div>
+          <div class="vel-label">velocity</div>
+        </div>`).join('');
+
+    const badgeClass = {'news':'badge-news','finance':'badge-finance','site':'badge-site','social':'badge-social'};
+    const signalsHtml = (profile.top_signals || []).slice(0,6).map(s => `
+      <div class="signal-item">
+        <span class="signal-badge ${badgeClass[s.source]||'badge-news'}">${s.source}</span>
+        <div style="flex:1">
+          <div class="signal-content">${escHtml(s.content.slice(0,160))}</div>
+          <div class="signal-weight">weight: ${(+s.weight).toFixed(2)}</div>
+        </div>
+      </div>`).join('');
+
+    const trajPoints = profile.trajectory || [];
+    const sparkSvg = trajPoints.length >= 2 ? buildSparkline(trajPoints) : '';
+
+    const findings = (r.key_findings || []).map(f => `<li>${escHtml(f)}</li>`).join('');
+    const actions = (r.recommended_actions || []).map(a => `<li>${escHtml(a)}</li>`).join('');
+
+    el.innerHTML = `
+      ${alertHtml}
+
+      <div class="card">
+        <div class="card-header">
+          <span style="font-size:16px">🎯</span>
+          <span class="card-title">Entity — ${escHtml(profile.entity)}</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--text3)">${new Date(r.timestamp*1000).toLocaleTimeString()}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
+          <div>
+            <div style="font-size:44px;font-weight:700;line-height:1" class="${vCls}">${profile.velocity_score.toFixed(1)}</div>
+            <div style="font-size:12px;color:var(--text3)">composite velocity / 10</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Trajectory ${slopeDir}</div>
+            ${sparkSvg}
+          </div>
+        </div>
+        <div class="velocity-row">${sourceVels}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>🔮</span><span class="card-title">Prediction</span></div>
+        <div class="prediction-box">
+          <div class="prediction-text">${escHtml(profile.prediction)}</div>
+          <div class="confidence-row">
+            <div class="confidence-bar"><div class="confidence-fill" style="width:${confPct}%"></div></div>
+            <div class="confidence-pct">${confPct}%</div>
+            <div style="font-size:11px;color:var(--text3)">confidence</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>📡</span><span class="card-title">Top signals</span></div>
+        ${signalsHtml || '<div style="color:var(--text3);font-size:13px">No signals collected</div>'}
+      </div>
+
+      ${r.executive_summary ? `
+      <div class="card">
+        <div class="card-header"><span>📋</span><span class="card-title">Executive summary</span></div>
+        <div class="summary-text">${escHtml(r.executive_summary)}</div>
+        ${findings ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:600">KEY FINDINGS</div>
+          <ul class="finding-list">${findings}</ul>` : ''}
+        ${actions ? `<div style="font-size:12px;color:var(--text3);margin:14px 0 8px;font-weight:600">RECOMMENDED ACTIONS</div>
+          <ul class="finding-list action-list">${actions}</ul>` : ''}
+      </div>` : ''}
+
+      <div style="color:var(--text3);font-size:11px;text-align:right;padding:4px 0">
+        Processed in ${r.processing_time_s?.toFixed(1)}s · Powered by Bright Data + Claude Sonnet
+      </div>
+    `;
+  }
+
+  function buildSparkline(points) {
+    const w = 200, h = 36;
+    const max = Math.max(...points, 1);
+    const min = Math.min(...points, 0);
+    const range = max - min || 1;
+    const px = (i) => (i / (points.length - 1)) * w;
+    const py = (v) => h - ((v - min) / range) * (h - 4) - 2;
+    const pts = points.map((v, i) => `${px(i)},${py(v)}`).join(' ');
+    const color = points[points.length-1] >= 5 ? '#e84040' : points[points.length-1] >= 3 ? '#f5a623' : '#5b8df8';
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="${px(points.length-1)}" cy="${py(points[points.length-1])}" r="3" fill="${color}"/>
+    </svg>`;
+  }
+
+  function addToFeed(r) {
+    const feed = document.getElementById('feed-list');
+    const profile = r.profiles?.[0];
+    const score = profile?.velocity_score?.toFixed(1) || '—';
+    const vCls = scoreClass(parseFloat(score));
+    const t = new Date((r.timestamp||Date.now()/1000)*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
+    const item = document.createElement('div');
+    item.className = 'feed-item';
+    item.innerHTML = `
+      <div class="feed-query">${escHtml(r.query?.slice(0,60) || 'Query')}</div>
+      <div class="feed-meta">
+        <span class="feed-score ${vCls}">⚡ ${score}</span>
+        ${r.alert_triggered ? '<span class="feed-alert">ALERT</span>' : ''}
+        <span class="feed-time">${t}</span>
+      </div>`;
+    item.onclick = () => { renderReport(r); document.getElementById('report-container').style.display = ''; };
+
+    // Remove placeholder
+    const placeholder = feed.querySelector('div[style]');
+    if (placeholder) placeholder.remove();
+
+    feed.insertBefore(item, feed.firstChild);
+  }
+
+  function showError(msg) {
+    document.getElementById('report-container').style.display = '';
+    document.getElementById('report-container').innerHTML =
+      `<div class="card"><div class="alert-banner"><span>❌</span> Error: ${escHtml(msg)}</div></div>`;
+  }
+
+  function runQuery() {
+    const q = document.getElementById('query-input').value.trim();
+    if (!q) return;
+    currentQuery = q;
+    setRunning(true);
+    // Reset steps
+    ['step-intent','step-agents','step-temporal','step-synthesis'].forEach(s => {
+      document.getElementById(s).className = 'step';
+    });
+    document.getElementById('step-intent').className = 'step active';
+
+    fetch('/api/query', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({query: q, stream: true}),
+    }).catch(e => { showError(e.message); setRunning(false); });
+  }
+
+  function setQuery(q) {
+    document.getElementById('query-input').value = q;
+  }
+
+  function escHtml(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  document.getElementById('query-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runQuery();
+  });
+
+  connect();
+</script>
+</body>
+</html>
