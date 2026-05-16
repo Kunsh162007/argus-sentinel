@@ -258,6 +258,8 @@ Examples:
 
     # Validate API keys
     missing = []
+    if not CONFIG.model.google_api_key:
+        missing.append("GOOGLE_API_KEY")
     if not CONFIG.bright_data.api_key:
         missing.append("BRIGHT_DATA_API_KEY")
     if not CONFIG.bright_data.serp_key:

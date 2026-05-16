@@ -31,7 +31,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from anthropic import AsyncAnthropic
+import google.generativeai as genai
 
 from agents.base_agent import ArgusSignal, AgentSnapshot
 from config import CONFIG
@@ -145,9 +145,10 @@ class TemporalVelocityEngine:
     ANOMALY_ZSCORE_THRESHOLD = 2.5
 
     def __init__(self):
-        self._windows: dict[str, dict[str, VelocityWindow]] = {}  # entity → source → window
+        self._windows: dict[str, dict[str, VelocityWindow]] = {}
         self._composite_history: dict[str, list[float]] = {}
-        self._anthropic = AsyncAnthropic()
+        genai.configure(api_key=CONFIG.model.google_api_key)
+        self._model = genai.GenerativeModel(CONFIG.model.analysis_model)
 
     def _get_window(self, entity: str, source: str) -> VelocityWindow:
         if entity not in self._windows:
@@ -311,15 +312,9 @@ Respond ONLY with a JSON object:
 {{"prediction": "...", "confidence": 0.XX, "timeframe_days": N, "event_category": "product|funding|partnership|regulatory|personnel|other"}}"""
 
         try:
-            response = await self._anthropic.messages.create(
-                model=CONFIG.model.analysis_model,
-                max_tokens=512,
-                temperature=0.1,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.content[0].text.strip()
-            # Strip markdown fences if present
-            raw = raw.removeprefix("```json").removesuffix("```").strip()
+            response = await self._model.generate_content_async(prompt)
+            raw = response.text.strip()
+            raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             parsed = json.loads(raw)
             return parsed.get("prediction", "Insufficient signal for prediction."), \
                    float(parsed.get("confidence", 0.5))

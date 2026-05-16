@@ -78,10 +78,10 @@ with st.sidebar:
     st.divider()
 
     st.markdown("### Credentials")
-    anthropic_key = st.text_input(
-        "Anthropic API Key", type="password",
-        placeholder="sk-ant-api03-…",
-        help="Get from console.anthropic.com/account/keys",
+    google_key = st.text_input(
+        "Google Gemini API Key", type="password",
+        placeholder="AIza…",
+        help="Free key from aistudio.google.com/app/apikey",
     )
     bd_key = st.text_input(
         "Bright Data API Key", type="password",
@@ -104,7 +104,7 @@ with st.sidebar:
     )
 
 # ── Inject credentials into environment ─────────────────────────
-if anthropic_key:  os.environ["ANTHROPIC_API_KEY"] = anthropic_key
+if google_key:     os.environ["GOOGLE_API_KEY"] = google_key
 if bd_key:         os.environ["BRIGHT_DATA_API_KEY"] = bd_key
 if bd_serp:        os.environ["BRIGHT_DATA_SERP_KEY"] = bd_serp
 if bd_customer:    os.environ["BRIGHT_DATA_CUSTOMER_ID"] = bd_customer
@@ -144,8 +144,8 @@ if run_clicked:
     if not query.strip():
         st.warning("Enter a query first.")
         st.stop()
-    if not anthropic_key:
-        st.error("Add your Anthropic API key in the sidebar to continue.")
+    if not google_key:
+        st.error("Add your free Google Gemini API key in the sidebar. Get one at aistudio.google.com/app/apikey")
         st.stop()
 
     # ── Run pipeline ────────────────────────────────────────────
@@ -164,7 +164,7 @@ if run_clicked:
         report = run_async(ArgusOrchestrator().run(query))
         elapsed = time.time() - t0
 
-        progress.progress(90, "Synthesising with Claude…")
+        progress.progress(90, "Synthesising with Gemini…")
         time.sleep(0.3)
         progress.progress(100, "Done")
         status.empty()
@@ -250,8 +250,8 @@ if run_clicked:
         progress.empty()
         status.empty()
         st.error(f"**Error:** {e}")
-        if "401" in str(e) or "authentication" in str(e).lower():
-            st.info("💡 Check your Anthropic API key in the sidebar.")
+        if "401" in str(e) or "api_key" in str(e).lower() or "invalid" in str(e).lower():
+            st.info("💡 Check your Google Gemini API key in the sidebar.")
         elif "bright" in str(e).lower() or "proxy" in str(e).lower():
             st.info("💡 Check your Bright Data credentials in the sidebar.")
         else:

@@ -3,7 +3,9 @@
 # Python 3.14: install with --pre flag if needed (see SETUP.md)
 
 # ── Core LLM ──────────────────────────────────────────────────────
-anthropic>=0.40.0
+# Google Gemini — free tier: 1500 req/day, no credit card needed
+# Get free API key at: https://aistudio.google.com/app/apikey
+google-generativeai>=0.8.0
 
 # ── Web Infrastructure ────────────────────────────────────────────
 aiohttp>=3.10.0

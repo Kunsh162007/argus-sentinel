@@ -40,10 +40,13 @@ class BrightDataConfig:
 
 @dataclass
 class ModelConfig:
-    orchestrator_model: str = "claude-sonnet-4-20250514"
-    analysis_model: str = "claude-sonnet-4-20250514"
+    # Google Gemini Flash — completely free, 1500 req/day
+    # Get key at: https://aistudio.google.com/app/apikey
+    google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
+    orchestrator_model: str = "gemini-1.5-flash"
+    analysis_model: str = "gemini-1.5-flash"
     max_tokens: int = 4096
-    temperature: float = 0.1  # Low temp for factual analysis
+    temperature: float = 0.1
 
 
 @dataclass

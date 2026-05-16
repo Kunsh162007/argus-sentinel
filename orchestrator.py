@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from anthropic import AsyncAnthropic
+import google.generativeai as genai
 
 from agents.news_agent import NewsAgent
 from agents.finance_agent import FinanceAgent
@@ -66,7 +66,8 @@ it into actionable predictions. Be specific, cite signal sources, quantify confi
 
 class ArgusOrchestrator:
     def __init__(self):
-        self.anthropic = AsyncAnthropic()
+        genai.configure(api_key=CONFIG.model.google_api_key)
+        self._model = genai.GenerativeModel(CONFIG.model.orchestrator_model)
         self.temporal_engine = TemporalVelocityEngine()
 
     async def run(self, query: str) -> ArgusReport:
@@ -117,13 +118,8 @@ class ArgusOrchestrator:
             'timeframe_days: how far ahead the user cares about'
         )
         try:
-            resp = await self.anthropic.messages.create(
-                model=CONFIG.model.orchestrator_model,
-                max_tokens=256,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = resp.content[0].text.strip()
+            resp = await self._model.generate_content_async(prompt)
+            raw = resp.text.strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(raw)
             return QueryIntent(
@@ -166,80 +162,20 @@ class ArgusOrchestrator:
         intent: QueryIntent,
         profiles: list,
     ) -> tuple:
-        """
-        Synthesis using Anthropic SDK directly.
-        Optionally connects to Bright Data MCP Server if credentials present.
-        Falls back to direct Claude call if MCP unavailable.
-        """
-        # Try MCP-enhanced synthesis first
-        if CONFIG.bright_data.api_key:
-            try:
-                return await self._synthesise_with_mcp(query, profiles)
-            except Exception as e:
-                logger.warning("MCP synthesis failed, using direct Claude: %s", e)
-
         return await self._synthesise_direct(query, profiles)
 
-    async def _synthesise_with_mcp(self, query: str, profiles: list) -> tuple:
-        """
-        Uses Anthropic SDK's native MCP support to give Claude
-        live web access via Bright Data's MCP Server.
-        """
-        context = self._build_context(profiles)
-
-        # Anthropic SDK MCP tool definition (Bright Data MCP Server)
-        mcp_tool = {
-            "type": "mcp",
-            "server_label": "brightdata",
-            "server_url": CONFIG.bright_data.mcp_url,
-            "require_approval": "never",
-            "headers": {"Authorization": f"Bearer {CONFIG.bright_data.api_key}"},
-        }
-
-        resp = await self.anthropic.messages.create(
-            model=CONFIG.model.orchestrator_model,
-            max_tokens=CONFIG.model.max_tokens,
-            temperature=0.2,
-            system=ORCHESTRATOR_SYSTEM_PROMPT,
-            tools=[mcp_tool],
-            messages=[{
-                "role": "user",
-                "content": (
-                    f'Intelligence query: "{query}"\n\n'
-                    f'Temporal data collected:\n{context}\n\n'
-                    'Use your web tools to verify key signals and add context.\n'
-                    'Then return JSON with keys: executive_summary, key_findings (list), '
-                    'recommended_actions (list).'
-                ),
-            }],
-        )
-
-        # Extract final text block from potentially multi-block response
-        text = ""
-        for block in resp.content:
-            if hasattr(block, "text"):
-                text = block.text
-        return self._parse_synthesis(text)
-
     async def _synthesise_direct(self, query: str, profiles: list) -> tuple:
-        """Direct Claude call without MCP (fallback)."""
+        """Synthesis via Gemini Flash (free)."""
         context = self._build_context(profiles)
-        resp = await self.anthropic.messages.create(
-            model=CONFIG.model.orchestrator_model,
-            max_tokens=1024,
-            temperature=0.2,
-            system=ORCHESTRATOR_SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f'Intelligence query: "{query}"\n\n'
-                    f'Temporal data:\n{context}\n\n'
-                    'Return JSON: {{"executive_summary":"...","key_findings":[...],'
-                    '"recommended_actions":[...]}}'
-                ),
-            }],
+        prompt = (
+            f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n"
+            f'Intelligence query: "{query}"\n\n'
+            f'Temporal data:\n{context}\n\n'
+            'Return JSON only: {"executive_summary":"...","key_findings":[...],'
+            '"recommended_actions":[...]}'
         )
-        return self._parse_synthesis(resp.content[0].text)
+        resp = await self._model.generate_content_async(prompt)
+        return self._parse_synthesis(resp.text)
 
     @staticmethod
     def _build_context(profiles: list) -> str:
