@@ -415,7 +415,8 @@
   let currentQuery = '';
 
   function connect() {
-    ws = new WebSocket(`ws://${location.host}/ws`);
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
     ws.onopen = () => {
       document.getElementById('status-dot').className = 'status-dot connected';
       document.getElementById('status-label').textContent = 'Connected';
