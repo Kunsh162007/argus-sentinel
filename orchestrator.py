@@ -115,7 +115,7 @@ class _LLMClient:
 class ArgusOrchestrator:
     def __init__(self):
         self._llm = _LLMClient()
-        self.temporal_engine = TemporalVelocityEngine()
+        self.temporal_engine = TemporalVelocityEngine(llm_generate=self._llm.generate)
 
     async def run(self, query: str) -> ArgusReport:
         t0 = time.time()

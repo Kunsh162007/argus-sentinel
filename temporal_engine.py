@@ -31,8 +31,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-import google.generativeai as genai
-
 from agents.base_agent import ArgusSignal, AgentSnapshot
 from config import CONFIG
 
@@ -144,11 +142,10 @@ class TemporalVelocityEngine:
     CROSS_DOMAIN_THRESHOLD = 3.0
     ANOMALY_ZSCORE_THRESHOLD = 2.5
 
-    def __init__(self):
+    def __init__(self, llm_generate=None):
         self._windows: dict[str, dict[str, VelocityWindow]] = {}
         self._composite_history: dict[str, list[float]] = {}
-        genai.configure(api_key=CONFIG.model.google_api_key)
-        self._model = genai.GenerativeModel(CONFIG.model.analysis_model)
+        self._llm_generate = llm_generate  # async fn(prompt) -> str
 
     def _get_window(self, entity: str, source: str) -> VelocityWindow:
         if entity not in self._windows:
@@ -312,9 +309,10 @@ Respond ONLY with a JSON object:
 {{"prediction": "...", "confidence": 0.XX, "timeframe_days": N, "event_category": "product|funding|partnership|regulatory|personnel|other"}}"""
 
         try:
-            response = await self._model.generate_content_async(prompt)
-            raw = response.text.strip()
-            raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            if not self._llm_generate:
+                raise RuntimeError("No LLM configured")
+            raw = await asyncio.wait_for(self._llm_generate(prompt), timeout=15)
+            raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             parsed = json.loads(raw)
             return parsed.get("prediction", "Insufficient signal for prediction."), \
                    float(parsed.get("confidence", 0.5))
