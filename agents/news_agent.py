@@ -68,6 +68,9 @@ class NewsAgent(BaseAgent):
         Collects news signals for an entity across multiple search engines
         and time ranges to detect velocity.
         """
+        if not self.client.cfg.api_key:
+            logger.info("NewsAgent: no Bright Data API key — skipping")
+            return []
         # Primary search: entity + query
         primary_results = await self.client.serp_news_multi_engine(
             query=f"{entity} {query}",

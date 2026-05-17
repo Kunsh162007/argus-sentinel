@@ -68,6 +68,9 @@ class SignalMinerAgent(BaseAgent):
 
     async def collect(self, entity: str, query: str) -> list[ArgusSignal]:
         """Parallel collection from Reddit, HN, GitHub, and Product Hunt."""
+        if not self.client.cfg.api_key:
+            logger.info("SignalMiner: no Bright Data API key — skipping")
+            return []
         results = await asyncio.gather(
             self._collect_reddit(entity, query),
             self._collect_hn(entity, query),

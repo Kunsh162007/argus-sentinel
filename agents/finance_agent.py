@@ -53,6 +53,9 @@ class FinanceAgent(BaseAgent):
 
     async def collect(self, entity: str, query: str) -> list[ArgusSignal]:
         """Parallel collection from LinkedIn, Crunchbase, and SEC EDGAR."""
+        if not self.client.cfg.api_key:
+            logger.info("FinanceAgent: no Bright Data API key — skipping")
+            return []
         import asyncio
         results = await asyncio.gather(
             self._collect_linkedin(entity),

@@ -87,6 +87,9 @@ class SiteWatcherAgent(BaseAgent):
         """
         Discovers the entity's main domain, then monitors key pages.
         """
+        if not self.client.cfg.api_key:
+            logger.info("SiteWatcher: no Bright Data API key — skipping")
+            return []
         domain = await self._resolve_domain(entity)
         if not domain:
             logger.warning("SiteWatcher: could not resolve domain for '%s'", entity)
