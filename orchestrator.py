@@ -64,6 +64,27 @@ You receive temporal web intelligence data collected by specialised agents and s
 it into actionable predictions. Be specific, cite signal sources, quantify confidence."""
 
 
+async def _gemini_with_retry(model, prompt: str, max_retries: int = 3) -> str:
+    """Call Gemini with automatic retry on 429 rate-limit errors."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = await model.generate_content_async(prompt)
+            return resp.text
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg and attempt < max_retries:
+                # Parse retry delay from error message if present
+                import re as _re
+                m = _re.search(r"retry[^\d]*(\d+)", msg, _re.I)
+                wait = int(m.group(1)) if m else 30 * attempt
+                wait = min(wait, 60)
+                logger.warning("Gemini 429 — waiting %ds before retry %d/%d", wait, attempt, max_retries)
+                await asyncio.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Gemini retries exhausted")
+
+
 class ArgusOrchestrator:
     def __init__(self):
         genai.configure(api_key=CONFIG.model.google_api_key)
@@ -118,8 +139,7 @@ class ArgusOrchestrator:
             'timeframe_days: how far ahead the user cares about'
         )
         try:
-            resp = await self._model.generate_content_async(prompt)
-            raw = resp.text.strip()
+            raw = (await _gemini_with_retry(self._model, prompt)).strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(raw)
             return QueryIntent(
@@ -179,8 +199,8 @@ class ArgusOrchestrator:
             'Return JSON only: {"executive_summary":"...","key_findings":[...],'
             '"recommended_actions":[...]}'
         )
-        resp = await self._model.generate_content_async(prompt)
-        return self._parse_synthesis(resp.text)
+        text = await _gemini_with_retry(self._model, prompt)
+        return self._parse_synthesis(text)
 
     @staticmethod
     def _build_context(profiles: list) -> str:
