@@ -85,10 +85,47 @@ async def _gemini_with_retry(model, prompt: str, max_retries: int = 3) -> str:
     raise RuntimeError("Gemini retries exhausted")
 
 
+_PREFERRED_MODELS = [
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-flash-001",
+    "gemini-1.5-flash-002",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-pro",
+    "gemini-1.0-pro",
+    "gemini-pro",
+]
+
+
+def _pick_model() -> str:
+    """Return the best model this API key actually supports."""
+    try:
+        available = {
+            m.name.replace("models/", "")
+            for m in genai.list_models()
+            if "generateContent" in (m.supported_generation_methods or [])
+        }
+        logger.info("Available Gemini models: %s", sorted(available))
+        for name in _PREFERRED_MODELS:
+            if name in available:
+                logger.info("Selected model: %s", name)
+                return name
+        # Last resort: use whatever is available
+        if available:
+            chosen = sorted(available)[0]
+            logger.warning("No preferred model found — using %s", chosen)
+            return chosen
+    except Exception as e:
+        logger.warning("Model discovery failed: %s — falling back to config", e)
+    return CONFIG.model.orchestrator_model
+
+
 class ArgusOrchestrator:
     def __init__(self):
         genai.configure(api_key=CONFIG.model.google_api_key)
-        self._model = genai.GenerativeModel(CONFIG.model.orchestrator_model)
+        model_name = _pick_model()
+        self._model = genai.GenerativeModel(model_name)
         self.temporal_engine = TemporalVelocityEngine()
 
     async def run(self, query: str) -> ArgusReport:
