@@ -222,8 +222,9 @@ class ArgusOrchestrator:
             f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n"
             f'Intelligence query: "{query}"\n\n'
             f'Temporal data:\n{context}\n\n'
-            'Return JSON only: {"executive_summary":"...","key_findings":[...],'
-            '"recommended_actions":[...]}'
+            'Return JSON only (arrays must be plain strings, not objects):\n'
+            '{"executive_summary":"...","key_findings":["finding 1","finding 2"],'
+            '"recommended_actions":["action 1","action 2"]}'
         )
         text = await self._llm.generate(prompt)
         return self._parse_synthesis(text)
@@ -250,10 +251,21 @@ class ArgusOrchestrator:
         text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
             data = json.loads(text)
+
+            def to_str_list(val):
+                if not isinstance(val, list):
+                    return []
+                return [
+                    v if isinstance(v, str) else
+                    v.get("text", v.get("finding", v.get("action", str(v))))
+                    if isinstance(v, dict) else str(v)
+                    for v in val
+                ]
+
             return (
                 data.get("executive_summary", "Analysis complete."),
-                data.get("key_findings", []),
-                data.get("recommended_actions", []),
+                to_str_list(data.get("key_findings", [])),
+                to_str_list(data.get("recommended_actions", [])),
             )
         except Exception:
             return (text[:400] if text else "Analysis complete.", [], [])

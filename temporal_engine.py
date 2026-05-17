@@ -234,7 +234,6 @@ class TemporalVelocityEngine:
         alert = (
             composite >= CONFIG.temporal.alert_threshold
             or anomaly
-            or confidence >= 0.80
         )
 
         profile = TemporalProfile(
