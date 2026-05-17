@@ -140,10 +140,15 @@ class ArgusOrchestrator:
             )
 
     async def _process_entity(self, entity: str, query: str, agents: list) -> TemporalProfile:
-        results = await asyncio.gather(
-            *[a.run_and_snapshot(entity, query) for a in agents],
-            return_exceptions=True,
-        )
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*[a.run_and_snapshot(entity, query) for a in agents],
+                               return_exceptions=True),
+                timeout=20,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Agents timed out for '%s' after 20s — continuing with empty signals", entity)
+            results = []
         all_signals, new_signals = [], []
         for r in results:
             if isinstance(r, Exception):

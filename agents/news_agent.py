@@ -168,28 +168,20 @@ class NewsAgent(BaseAgent):
     #  Free fallback (no Bright Data key required)                         #
     # ------------------------------------------------------------------ #
 
-    FREE_RSS_FEEDS = [
-        "https://techcrunch.com/feed/",
-        "https://www.theverge.com/rss/index.xml",
-        "https://feeds.arstechnica.com/arstechnica/index",
-        "https://www.wired.com/feed/rss",
-        "https://feeds.feedburner.com/venturebeat/SZYF",
-    ]
-
     async def _collect_free(self, entity: str, query: str) -> list[ArgusSignal]:
-        """Collect from free public sources: Google News, HN, Reddit, RSS feeds."""
+        """Collect from free public sources: Google News, HN, Reddit."""
         import asyncio
-        timeout = aiohttp.ClientTimeout(total=15)
+        # Google News already covers TechCrunch/Verge/Wired/etc so static RSS feeds are redundant
+        timeout = aiohttp.ClientTimeout(total=10)
         headers = {"User-Agent": "Mozilla/5.0 (compatible; argus-sentinel/1.0)"}
 
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             tasks = [
-                # Google News RSS — real-time, all sources, no key needed
                 self._free_google_news(session, entity, query),
-                self._free_google_news(session, entity, ""),   # entity-only search
+                self._free_google_news(session, entity, ""),   # broad entity-only search
                 self._free_hn(session, entity, query),
                 self._free_reddit(session, entity, query),
-            ] + [self._free_rss(session, feed, entity) for feed in self.FREE_RSS_FEEDS]
+            ]
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -320,50 +312,3 @@ class NewsAgent(BaseAgent):
             ))
         return signals
 
-    async def _free_rss(self, session: aiohttp.ClientSession, feed_url: str, entity: str) -> list[ArgusSignal]:
-        entity_lower = entity.lower()
-        try:
-            async with session.get(feed_url) as resp:
-                if resp.status != 200:
-                    return []
-                text = await resp.text()
-        except Exception:
-            return []
-
-        signals = []
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError:
-            return []
-
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
-        # Handle both RSS <item> and Atom <entry>
-        items = root.findall(".//item") or root.findall(".//atom:entry", ns)
-
-        for item in items[:30]:
-            title_el = item.find("title") or item.find("atom:title", ns)
-            link_el = item.find("link") or item.find("atom:link", ns)
-            desc_el = item.find("description") or item.find("atom:summary", ns)
-
-            title = (title_el.text or "").strip() if title_el is not None else ""
-            link = (link_el.text or link_el.get("href", "")).strip() if link_el is not None else ""
-            desc = (desc_el.text or "").strip() if desc_el is not None else ""
-
-            if not title or not link:
-                continue
-            if entity_lower not in title.lower() and entity_lower not in desc.lower():
-                continue
-
-            domain = self._extract_domain(link)
-            weight = self._compute_weight(domain, (title + " " + desc).lower())
-            signals.append(ArgusSignal(
-                source="news",
-                signal_type="mention",
-                entity=entity,
-                content=f"{title}",
-                url=link,
-                timestamp=time.time(),
-                weight=weight,
-                metadata={"platform": "rss", "feed": feed_url},
-            ))
-        return signals
