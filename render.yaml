@@ -4,6 +4,8 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     envVars:
+      - key: GROQ_API_KEY
+        sync: false
       - key: GOOGLE_API_KEY
         sync: false
       - key: BRIGHT_DATA_API_KEY

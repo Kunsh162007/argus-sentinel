@@ -40,8 +40,12 @@ class BrightDataConfig:
 
 @dataclass
 class ModelConfig:
-    # Google Gemini Flash — completely free, 1500 req/day
-    # Get key at: https://aistudio.google.com/app/apikey
+    # Groq — free globally, no credit card, fast LPU inference
+    # Get free key at: https://console.groq.com
+    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    groq_model: str = "llama-3.3-70b-versatile"
+
+    # Google Gemini — fallback if no Groq key
     google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     orchestrator_model: str = "gemini-1.5-flash"
     analysis_model: str = "gemini-1.5-flash"

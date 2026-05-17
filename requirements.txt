@@ -3,8 +3,10 @@
 # Python 3.14: install with --pre flag if needed (see SETUP.md)
 
 # ── Core LLM ──────────────────────────────────────────────────────
-# Google Gemini — free tier: 1500 req/day, no credit card needed
-# Get free API key at: https://aistudio.google.com/app/apikey
+# Groq — free globally, no credit card, 6000+ tokens/min free
+# Get free key at: https://console.groq.com
+groq>=0.9.0
+# Google Gemini — fallback if no Groq key
 google-generativeai>=0.8.0
 
 # ── Web Infrastructure ────────────────────────────────────────────

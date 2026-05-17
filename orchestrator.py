@@ -10,7 +10,11 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GEMINI_AVAILABLE = True
+except ImportError:
+    _GEMINI_AVAILABLE = False
 
 from agents.news_agent import NewsAgent
 from agents.finance_agent import FinanceAgent
@@ -64,68 +68,53 @@ You receive temporal web intelligence data collected by specialised agents and s
 it into actionable predictions. Be specific, cite signal sources, quantify confidence."""
 
 
-async def _gemini_with_retry(model, prompt: str, max_retries: int = 3) -> str:
-    """Call Gemini with automatic retry on 429 rate-limit errors."""
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = await model.generate_content_async(prompt)
-            return resp.text
-        except Exception as e:
-            msg = str(e)
-            if "429" in msg and attempt < max_retries:
-                # Parse retry delay from error message if present
-                import re as _re
-                m = _re.search(r"retry[^\d]*(\d+)", msg, _re.I)
-                wait = int(m.group(1)) if m else 30 * attempt
-                wait = min(wait, 60)
-                logger.warning("Gemini 429 — waiting %ds before retry %d/%d", wait, attempt, max_retries)
-                await asyncio.sleep(wait)
-            else:
-                raise
-    raise RuntimeError("Gemini retries exhausted")
+class _LLMClient:
+    """Thin wrapper: uses Groq if GROQ_API_KEY is set, else falls back to Gemini."""
 
+    def __init__(self):
+        if CONFIG.model.groq_api_key:
+            from groq import AsyncGroq
+            self._groq = AsyncGroq(api_key=CONFIG.model.groq_api_key)
+            self._provider = "groq"
+            self._model_name = CONFIG.model.groq_model
+            logger.info("LLM provider: Groq (%s)", self._model_name)
+        elif CONFIG.model.google_api_key and _GEMINI_AVAILABLE:
+            genai.configure(api_key=CONFIG.model.google_api_key)
+            self._gemini = genai.GenerativeModel(CONFIG.model.orchestrator_model)
+            self._provider = "gemini"
+            self._model_name = CONFIG.model.orchestrator_model
+            logger.info("LLM provider: Gemini (%s)", self._model_name)
+        else:
+            raise ValueError(
+                "No LLM key found. Set GROQ_API_KEY (free at console.groq.com) "
+                "or GOOGLE_API_KEY in Render environment variables."
+            )
 
-_PREFERRED_MODELS = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-flash-001",
-    "gemini-1.5-flash-002",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-pro",
-    "gemini-1.0-pro",
-    "gemini-pro",
-]
-
-
-def _pick_model() -> str:
-    """Return the best model this API key actually supports."""
-    try:
-        available = {
-            m.name.replace("models/", "")
-            for m in genai.list_models()
-            if "generateContent" in (m.supported_generation_methods or [])
-        }
-        logger.info("Available Gemini models: %s", sorted(available))
-        for name in _PREFERRED_MODELS:
-            if name in available:
-                logger.info("Selected model: %s", name)
-                return name
-        # Last resort: use whatever is available
-        if available:
-            chosen = sorted(available)[0]
-            logger.warning("No preferred model found — using %s", chosen)
-            return chosen
-    except Exception as e:
-        logger.warning("Model discovery failed: %s — falling back to config", e)
-    return CONFIG.model.orchestrator_model
+    async def generate(self, prompt: str) -> str:
+        if self._provider == "groq":
+            resp = await self._groq.chat.completions.create(
+                model=self._model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=CONFIG.model.max_tokens,
+                temperature=CONFIG.model.temperature,
+            )
+            return resp.choices[0].message.content
+        else:
+            for attempt in range(1, 4):
+                try:
+                    resp = await self._gemini.generate_content_async(prompt)
+                    return resp.text
+                except Exception as e:
+                    if "429" in str(e) and attempt < 3:
+                        await asyncio.sleep(min(30 * attempt, 60))
+                    else:
+                        raise
+            raise RuntimeError("Gemini retries exhausted")
 
 
 class ArgusOrchestrator:
     def __init__(self):
-        genai.configure(api_key=CONFIG.model.google_api_key)
-        model_name = _pick_model()
-        self._model = genai.GenerativeModel(model_name)
+        self._llm = _LLMClient()
         self.temporal_engine = TemporalVelocityEngine()
 
     async def run(self, query: str) -> ArgusReport:
@@ -176,7 +165,7 @@ class ArgusOrchestrator:
             'timeframe_days: how far ahead the user cares about'
         )
         try:
-            raw = (await _gemini_with_retry(self._model, prompt)).strip()
+            raw = (await self._llm.generate(prompt)).strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(raw)
             return QueryIntent(
@@ -236,7 +225,7 @@ class ArgusOrchestrator:
             'Return JSON only: {"executive_summary":"...","key_findings":[...],'
             '"recommended_actions":[...]}'
         )
-        text = await _gemini_with_retry(self._model, prompt)
+        text = await self._llm.generate(prompt)
         return self._parse_synthesis(text)
 
     @staticmethod
