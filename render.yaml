@@ -6,6 +6,8 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: NEWSAPI_KEY
+        sync: false
       - key: GOOGLE_API_KEY
         sync: false
       - key: BRIGHT_DATA_API_KEY

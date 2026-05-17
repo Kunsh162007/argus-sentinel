@@ -169,19 +169,17 @@ class NewsAgent(BaseAgent):
     # ------------------------------------------------------------------ #
 
     async def _collect_free(self, entity: str, query: str) -> list[ArgusSignal]:
-        """Collect from free public sources: Google News, HN, Reddit."""
+        """Collect from free public sources that work from datacenter IPs."""
         import asyncio
-        # Google News already covers TechCrunch/Verge/Wired/etc so static RSS feeds are redundant
         timeout = aiohttp.ClientTimeout(total=10)
         headers = {"User-Agent": "Mozilla/5.0 (compatible; argus-sentinel/1.0)"}
 
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             tasks = [
-                self._free_google_news(session, entity, query),
-                self._free_google_news(session, entity, ""),   # broad entity-only search
-                self._free_hn(session, entity, query),
-                self._free_reddit(session, entity, query),
+                self._free_hn(session, entity),
+                self._free_newsapi(session, entity, query),   # NewsAPI.org — reliable, datacenter-friendly
             ]
+            # Google News & Reddit block datacenter IPs — skip them
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -248,17 +246,18 @@ class NewsAgent(BaseAgent):
         logger.info("Google News: %d articles for '%s'", len(signals), search_term)
         return signals
 
-    async def _free_hn(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
-        q = urllib.parse.quote(f"{entity} {query}")
-        url = (
-            f"https://hn.algolia.com/api/v1/search"
-            f"?query={q}&tags=story&hitsPerPage=30"
-            f"&numericFilters=created_at_i>{int(time.time() - 30 * 86400)}"
-        )
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
+    async def _free_hn(self, session: aiohttp.ClientSession, entity: str) -> list[ArgusSignal]:
+        """Hacker News Algolia search — open API, works from any IP."""
+        q = urllib.parse.quote(entity)
+        url = f"https://hn.algolia.com/api/v1/search?query={q}&tags=story&hitsPerPage=30"
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        except Exception as e:
+            logger.debug("HN failed: %s", e)
+            return []
 
         signals = []
         for hit in data.get("hits", []):
@@ -279,6 +278,58 @@ class NewsAgent(BaseAgent):
                 weight=weight,
                 metadata={"platform": "hackernews", "points": points},
             ))
+        logger.info("HN: %d results for '%s'", len(signals), entity)
+        return signals
+
+    async def _free_newsapi(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
+        """NewsAPI.org — free 100 req/day, works from datacenter IPs. Key: newsapi.org/register"""
+        api_key = self.cfg.newsapi_key if hasattr(self.cfg, "newsapi_key") else ""
+        # Fallback: read directly from env
+        if not api_key:
+            import os
+            api_key = os.getenv("NEWSAPI_KEY", "")
+        if not api_key:
+            return []
+
+        q = urllib.parse.quote(f"{entity} {query}".strip())
+        url = (
+            f"https://newsapi.org/v2/everything"
+            f"?q={q}&sortBy=publishedAt&pageSize=30&language=en"
+        )
+        try:
+            async with session.get(url, headers={"X-Api-Key": api_key}) as resp:
+                if resp.status != 200:
+                    logger.debug("NewsAPI returned %d", resp.status)
+                    return []
+                data = await resp.json()
+        except Exception as e:
+            logger.debug("NewsAPI failed: %s", e)
+            return []
+
+        signals = []
+        for article in data.get("articles", []):
+            title = article.get("title") or ""
+            url_ = article.get("url") or ""
+            source_name = (article.get("source") or {}).get("name", "")
+            description = article.get("description") or ""
+            published = article.get("publishedAt") or ""
+
+            if not title or not url_ or title == "[Removed]":
+                continue
+
+            domain = self._extract_domain(url_)
+            weight = self._compute_weight(domain, (title + " " + description).lower())
+            signals.append(ArgusSignal(
+                source="news",
+                signal_type="mention",
+                entity=entity,
+                content=f"{title}" + (f" — {source_name}" if source_name else ""),
+                url=url_,
+                timestamp=self._parse_date(published),
+                weight=weight,
+                metadata={"platform": "newsapi", "source": source_name},
+            ))
+        logger.info("NewsAPI: %d articles for '%s'", len(signals), entity)
         return signals
 
     async def _free_reddit(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
