@@ -43,8 +43,8 @@ class ModelConfig:
     # Google Gemini Flash — completely free, 1500 req/day
     # Get key at: https://aistudio.google.com/app/apikey
     google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
-    orchestrator_model: str = "gemini-2.5-flash-preview-05-20"
-    analysis_model: str = "gemini-2.5-flash-preview-05-20"
+    orchestrator_model: str = "gemini-2.5-flash"
+    analysis_model: str = "gemini-2.5-flash"
     max_tokens: int = 4096
     temperature: float = 0.1
 
