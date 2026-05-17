@@ -643,6 +643,11 @@
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({query: q, stream: true}),
+    }).then(res => {
+      if (!res.ok) {
+        res.json().catch(() => ({detail: res.statusText}))
+          .then(body => { showError(body.detail || res.statusText); setRunning(false); });
+      }
     }).catch(e => { showError(e.message); setRunning(false); });
   }
 

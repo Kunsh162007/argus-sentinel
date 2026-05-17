@@ -80,8 +80,9 @@ class QueryRequest(BaseModel):
 @app.post("/api/query")
 async def run_query(req: QueryRequest):
     """
-    Run an intelligence query. Broadcasts status updates via WebSocket
-    as the pipeline progresses, then returns the final report.
+    Accept a query and immediately return 202, then run the pipeline as a
+    background task so Render's 30-second request timeout is never hit.
+    Results are pushed to the frontend via WebSocket.
     """
     await broadcast({
         "type": "status",
@@ -89,17 +90,19 @@ async def run_query(req: QueryRequest):
         "query": req.query,
         "ts": time.time(),
     })
+    asyncio.create_task(_run_orchestrator(req.query))
+    return JSONResponse(content={"status": "accepted", "query": req.query}, status_code=202)
 
+
+async def _run_orchestrator(query: str):
     orchestrator = ArgusOrchestrator()
-
     try:
-        await broadcast({"type": "status", "status": "agents_deployed", "query": req.query})
-        report = await orchestrator.run(req.query)
+        await broadcast({"type": "status", "status": "agents_deployed", "query": query})
+        report = await orchestrator.run(query)
 
         report_dict = report.to_dict()
         report_history.append(report_dict)
 
-        # Keep history bounded
         if len(report_history) > CONFIG.dashboard.max_history_entries:
             report_history.pop(0)
 
@@ -109,12 +112,9 @@ async def run_query(req: QueryRequest):
             "alert": report.alert_triggered,
         })
 
-        return JSONResponse(content=report_dict)
-
     except Exception as e:
         logger.error("Query failed: %s", e)
         await broadcast({"type": "error", "message": str(e)})
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/history")
