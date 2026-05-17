@@ -95,8 +95,13 @@ async def run_query(req: QueryRequest):
 
 
 async def _run_orchestrator(query: str):
-    orchestrator = ArgusOrchestrator()
     try:
+        if not CONFIG.model.google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY is not set. "
+                "Add it in Render → your service → Environment."
+            )
+        orchestrator = ArgusOrchestrator()
         await broadcast({"type": "status", "status": "agents_deployed", "query": query})
         report = await orchestrator.run(query)
 
