@@ -176,10 +176,10 @@ class NewsAgent(BaseAgent):
 
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             tasks = [
+                self._free_guardian(session, entity, query),  # no key needed, works everywhere
                 self._free_hn(session, entity),
-                self._free_newsapi(session, entity, query),   # NewsAPI.org — reliable, datacenter-friendly
+                self._free_newsapi(session, entity, query),   # optional: add NEWSAPI_KEY in Render
             ]
-            # Google News & Reddit block datacenter IPs — skip them
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -244,6 +244,52 @@ class NewsAgent(BaseAgent):
             ))
 
         logger.info("Google News: %d articles for '%s'", len(signals), search_term)
+        return signals
+
+    async def _free_guardian(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
+        """The Guardian Open Platform — free 'test' key works from any IP, no signup needed."""
+        import os
+        api_key = os.getenv("GUARDIAN_API_KEY", "test")  # 'test' key is public and rate-limited but works
+        q = urllib.parse.quote(f"{entity} {query}".strip())
+        url = (
+            f"https://content.guardianapis.com/search"
+            f"?q={q}&api-key={api_key}&show-fields=headline,trailText"
+            f"&order-by=newest&page-size=30"
+        )
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    logger.debug("Guardian returned %d", resp.status)
+                    return []
+                data = await resp.json()
+        except Exception as e:
+            logger.debug("Guardian failed: %s", e)
+            return []
+
+        signals = []
+        results = data.get("response", {}).get("results", [])
+        for item in results:
+            fields = item.get("fields", {})
+            title = fields.get("headline") or item.get("webTitle", "")
+            url_ = item.get("webUrl", "")
+            description = fields.get("trailText", "")
+            published = item.get("webPublicationDate", "")
+
+            if not title or not url_:
+                continue
+
+            weight = self._compute_weight("theguardian.com", (title + " " + description).lower())
+            signals.append(ArgusSignal(
+                source="news",
+                signal_type="mention",
+                entity=entity,
+                content=f"{title}" + (f" — {description[:80]}" if description else ""),
+                url=url_,
+                timestamp=self._parse_date(published),
+                weight=weight,
+                metadata={"platform": "guardian"},
+            ))
+        logger.info("Guardian: %d articles for '%s'", len(signals), entity)
         return signals
 
     async def _free_hn(self, session: aiohttp.ClientSession, entity: str) -> list[ArgusSignal]:
