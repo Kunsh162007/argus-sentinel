@@ -96,10 +96,10 @@ async def run_query(req: QueryRequest):
 
 async def _run_orchestrator(query: str):
     try:
-        if not CONFIG.model.google_api_key:
+        if not CONFIG.model.groq_api_key and not CONFIG.model.google_api_key:
             raise ValueError(
-                "GOOGLE_API_KEY is not set. "
-                "Add it in Render → your service → Environment."
+                "No LLM API key set. Add GROQ_API_KEY (free at console.groq.com) "
+                "in Render → your service → Environment."
             )
         orchestrator = ArgusOrchestrator()
         await broadcast({"type": "status", "status": "agents_deployed", "query": query})
