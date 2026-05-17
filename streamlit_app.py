@@ -4,6 +4,7 @@ Deploy in 3 minutes at share.streamlit.io — no Docker needed.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import sys
 import os
@@ -60,15 +61,14 @@ def badge(source: str) -> str:
 
 # ── Async runner helper ─────────────────────────────────────────
 def run_async(coro):
-    """Run async coroutine from Streamlit's sync context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+    """Run async coroutine from Streamlit's sync context.
+
+    Streamlit has its own event loop so we can't call run_until_complete on it.
+    Running in a ThreadPoolExecutor gives the coroutine a clean, isolated loop.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result()
 
 
 # ── Sidebar ─────────────────────────────────────────────────────
