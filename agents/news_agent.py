@@ -177,13 +177,16 @@ class NewsAgent(BaseAgent):
     ]
 
     async def _collect_free(self, entity: str, query: str) -> list[ArgusSignal]:
-        """Collect from free public APIs: HN Algolia, Reddit, RSS feeds."""
+        """Collect from free public sources: Google News, HN, Reddit, RSS feeds."""
         import asyncio
         timeout = aiohttp.ClientTimeout(total=15)
-        headers = {"User-Agent": "argus-sentinel/1.0 (research bot)"}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; argus-sentinel/1.0)"}
 
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             tasks = [
+                # Google News RSS — real-time, all sources, no key needed
+                self._free_google_news(session, entity, query),
+                self._free_google_news(session, entity, ""),   # entity-only search
                 self._free_hn(session, entity, query),
                 self._free_reddit(session, entity, query),
             ] + [self._free_rss(session, feed, entity) for feed in self.FREE_RSS_FEEDS]
@@ -198,6 +201,59 @@ class NewsAgent(BaseAgent):
             signals.extend(batch)
 
         logger.info("NewsAgent (free): %d signals for '%s'", len(signals), entity)
+        return signals
+
+    async def _free_google_news(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
+        """Google News RSS — real-time results from all major news sources, completely free."""
+        search_term = f"{entity} {query}".strip()
+        q = urllib.parse.quote(search_term)
+        url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return []
+                text = await resp.text()
+        except Exception as e:
+            logger.debug("Google News RSS failed: %s", e)
+            return []
+
+        signals = []
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return []
+
+        for item in root.findall(".//item"):
+            title_el = item.find("title")
+            link_el = item.find("link")
+            pub_el = item.find("pubDate")
+            source_el = item.find("source")
+
+            title = (title_el.text or "").strip() if title_el is not None else ""
+            link = (link_el.text or "").strip() if link_el is not None else ""
+            pub_date = (pub_el.text or "").strip() if pub_el is not None else ""
+            source_name = (source_el.text or "").strip() if source_el is not None else ""
+
+            if not title or not link:
+                continue
+
+            domain = self._extract_domain(link)
+            weight = self._compute_weight(domain, title.lower())
+            ts = self._parse_date(pub_date)
+
+            signals.append(ArgusSignal(
+                source="news",
+                signal_type="mention",
+                entity=entity,
+                content=f"{title}" + (f" — {source_name}" if source_name else ""),
+                url=link,
+                timestamp=ts,
+                weight=weight,
+                metadata={"platform": "google_news", "source": source_name, "pub_date": pub_date},
+            ))
+
+        logger.info("Google News: %d articles for '%s'", len(signals), search_term)
         return signals
 
     async def _free_hn(self, session: aiohttp.ClientSession, entity: str, query: str) -> list[ArgusSignal]:
